@@ -1,0 +1,668 @@
+---
+title: "Simulation&Algorithm_v3"
+author: "Doeun"
+date: "2023-05-22"
+output:
+  html_document :
+    toc : true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# 0. library import
+
+```{r}
+# install.packages('Rlab')
+# install.packages("pryr")
+# install.packages("dplyr")
+library(Rlab)
+library(pryr)
+library(dplyr)
+```
+
+# 1. Algorithm1 (포아송 평균 추정)
+
+## 1-1. Simulation function 정의
+
+**[변수 설명]**
+
+-   n : 자료수
+
+-   pi : 이상치 발생 확률
+
+-   mu : 참 평균 (true $\mu$)
+
+-   alpha : 이상치
+
+**[각 function의 output]**
+
+-   y : 주어진 조건에서 발생한 자료
+
+### 1. algo1_simul_S1() : S1 이상점 개입 모형
+
+```{r}
+algo1_simul_S1 <- function(n, pi, mu, alpha){
+  y <- rep(0,n)
+  
+  # 이상치 값 계산
+  y_0 <- alpha * mu 
+  
+  for (i in 1:n){
+  
+    tmp <- rbern(1, pi)
+    
+    # 1-pi 비율로 일반적인 자료 y 생성 
+    if (tmp == 0){
+      
+      y[i] <- rpois(1, mu)
+      
+      
+      # pi 비율로 이상치 생성
+    } else{
+      
+      y[i] <- y_0
+      
+    }
+    
+  }
+  
+  return(list(y = y))
+}
+
+```
+
+### 2. algo1_simul_S2() : S2 영과다 모형
+
+```{r}
+algo1_simul_S2 <- function(n, pi, mu, alpha){
+  y <- rep(0,n)
+  
+  for (i in 1:n){
+    
+    tmp <- rbern(1, pi)
+    
+    # 1-pi 비율로 일반적인 자료 y 생성 
+    if (tmp == 0){
+      
+      y[i] <- rpois(1, mu)
+      
+      
+      # pi 비율로 0값 생성
+    } else{
+      
+      y[i] <- 0
+      
+    }
+    
+  }
+  return(list(y = y))
+}
+```
+
+### 3. algo1_simul_S3() : S3 혼합 모형
+
+```{r}
+algo1_simul_S3 <- function(n, pi, mu, alpha){
+  y <- rep(0,n)
+  
+   # 이상치 값 계산
+  y_0 <- alpha * mu 
+  
+  for (i in 1:n){
+    
+    tmp <- rbern(1, pi)
+    tmp_2 <- rbern(1, 0.5)
+    
+    # 1-pi 비율로 일반적인 자료 y 생성 
+    if (tmp == 0){
+      
+      y[i] <- rpois(1, mu)
+      
+      
+    } else if(tmp_2 == 0){
+      
+      # pi/2 비율로 이상치 생성
+      y[i] <- y_0
+      
+      
+      # pi/2 비율로 0값 생성
+    } else{
+      
+        y[i] <- 0
+      
+    }
+    
+  }
+  return(list(y = y))
+}
+
+```
+
+## 1-2. Algorithm 1 function 정의
+
+**[변수 설명]**
+
+-   y : 입력되는 자료
+
+-   n : 입력되는 자료수
+
+-   mu : 확률분포 모수
+
+-   lambda : 조절모수
+
+-   tol : tolarence
+
+**[output]**
+
+-   iter : 반복수
+
+-   mu : 추정된 평균
+
+-   r_vec : 이동모수
+
+```{r}
+algo1 <- function(y,max_iter, n, mu, tol, lambda){
+  m = 1
+  mu.old = mean(y)
+  r.hat <- numeric(n) #초기화
+  while(m < max_iter){
+      
+    mu.new <- sum(y) / sum(exp(-r.hat))                #(a)
+    u <- log(mu.new)
+  
+    for (i in 1:n){
+      if(y[i] > lambda){                             #(b)
+        if(exp(u) - y[i] < -lambda){
+          r.hat[i] = u - log(y[i] - lambda)
+        } else if(exp(u) - y[i] > lambda){
+          r.hat[i] = u - log(y[i] + lambda)
+        } else{
+          r.hat[i] = 0
+        }
+    
+      } else{
+        if(exp(u) - y[i] > lambda){
+          r.hat[i] = u - log(y[i] + lambda)
+        } else{
+          r.hat[i] = 0
+        }
+    
+      }
+    
+    }
+  
+  
+    if ( m>1 & abs(mu.new-mu.old) < tol){                   #(c)
+      break
+    } else{mu.old <- mu.new}
+    m=m+1
+  
+  }
+  
+  return(list(iter = m, mu = mu.new, r_vec = r.hat))
+}
+```
+
+# 2. Algorithm2 (포아송 회귀계수 추정)
+
+## 2-1. Simulation function 정의
+
+**[변수 설명]**
+
+-   n : 자료수
+
+-   p : 독립변수 수
+
+-   pi : 이상치 발생 확률
+
+-   beta : 포아송 회귀의 참 회귀계수 (true $\beta$)
+
+-   alpha : 이상치
+
+**[각 function의 output]**
+
+-   X : 주어진 조건에서 발생한 자료인 X값. matrix형태 (
+    $X = {\vec{x_1}^T,^\vec{x_2}T,...,\vec{x_p}^T}$ )
+
+-   mu : 주어진 조건에서, 각 $\vec{x_i}$에서 계산한 $\vec{\mu}$. vector
+    형태
+
+-   y : 주어진 조건에서, 각 $\mu$를 평균으로 하는 포아송분포에서 발생한
+    자료 $\vec{y}$. vector형태
+
+### 1. algo2_simul_S1() : S1 이상점 개입 모형
+
+```{r}
+algo2_simul_S1 <- function(n, p, pi, beta, alpha){
+  x <- matrix(rep(0, n*p), ncol=p)
+  mu <- c()
+  y <- c()
+  b0 <- beta[1]
+  b <- beta[2:length(beta)]
+  
+  for (i in 1:n){
+    xi <- runif(p,-1,1)
+    mu_i <- exp(b0 + sum(xi*b))
+    y0 <- round(mu_i*alpha)
+    tmp <- rbern(1, pi)
+    
+    if (tmp==0){
+      y_i <- rpois(1, mu_i)
+    } else {
+      y_i <- y0
+    }
+    x[i,] <- xi 
+    mu <- append(mu, mu_i)
+    y <- append(y, y_i)
+  }
+  return(list(X = x, mu = mu, y = y))
+}
+```
+
+### 2. algo2_simul_S2() : S2 영과다 모형
+
+```{r}
+algo2_simul_S2 <- function(n, p, pi, beta, alpha){
+  x <- matrix(rep(0,n*p), ncol=p)
+  mu <- c()
+  y <- c()
+  b0 <- beta[1]
+  b <- beta[2:length(beta)]
+  
+  for (i in 1:n){
+    xi <- runif(p,-1,1)
+    mu_i <- exp(b0 + sum(xi*b))
+    y0 <- 0
+    tmp <- rbern(1,pi)
+    
+    if (tmp==0){
+      y_i <- rpois(1,mu_i)
+    } else {
+      y_i <- y0
+    }
+    x[i,] <- xi 
+    mu <- append(mu, mu_i)
+    y <- append(y, y_i)
+  }
+  return(list(X = x, mu = mu, y = y))
+}
+```
+
+### 3. algo2_simul_S3() : S3 혼합 모형
+
+```{r}
+algo2_simul_S3 <- function(n, p, pi, beta, alpha){
+  x <- matrix(rep(0,n*p),ncol=p)
+  mu <- c()
+  y <- c()
+  b0 <- beta[1]
+  b <- beta[2:length(beta)]
+  
+  for (i in 1:n){
+    xi <- runif(p,-1,1)
+    mu_i <- exp(b0 + sum(xi*b))
+    y0 <- round(mu_i*alpha)
+    
+    tmp <- rbern(1,pi)
+    tmp2 <- rbern(1,0.5)
+    
+    if (tmp==0){
+      y_i <- rpois(1,mu_i)
+    } else if (tmp2==0) {
+      y_i <- y0
+    }
+    else {
+      y_i <- 0
+    }
+    x[i,] <- xi 
+    mu <- append(mu, mu_i)
+    y <- append(y, y_i)
+  }
+  return(list(X = x, mu = mu, y = y))
+}
+```
+
+## 2-2. Algorithm 2 function 정의
+
+**[변수 설명]**
+
+-   X : 입력되는 자료 X, matrix 형태
+
+-   y : 입력되는 자료 y , vector 형태
+
+-   n : 입력되는 자료 수
+
+-   max_iter : 최대 반복횟수
+
+-   lambda : 조절모수
+
+-   tol : tolarence
+
+**[output]**
+
+-   iter : 반복수
+
+-   beta : 추정된 회귀계수
+
+-   r_vec : 이동모수
+
+-   mse : MSE값
+
+1.  theorm1 함수 정의
+
+```{r}
+theorm1 <- function(y, lambda, u_hat, r_vec){
+  if(y >= lambda){
+        if((exp(u_hat) - y) < -lambda) {r_vec = u_hat - log(y-lambda)}
+        else if (abs(exp(u_hat) - y) <= lambda) { r_vec = 0}
+        else if ((exp(u_hat) - y) > lambda) {r_vec = u_hat - log(y+lambda)}
+      }
+      else {
+        if((exp(u_hat) - y) <= lambda) {r_vec = 0}
+        else if ((exp(u_hat) - y) > lambda) {r_vec = u_hat - log(y+lambda)}
+      }
+  return(r_vec)
+}
+
+# vectorize 함수로 바꿔주기
+vectorized_theorm1 <- Vectorize(theorm1)
+```
+
+2.  dot product function 정의
+
+```{r}
+dot <- function(x,y) {return (x %*% y)}
+```
+
+3.  algorithm 2 함수 정의
+
+```{r}
+algo2 <- function(X,y,n, max_iter, lambda, tol){
+  # X : matrix 형태
+  # y : vector 형태
+  # max_iter : 최대 반복횟수
+  # lambda :
+  # tol : tolarence
+  
+  # 데이터 정리하기
+  data <- data.frame(X,y) # glm fit할 때 data frame형태여야함
+  data_x <- cbind(rep(1, n),X) # matrix 형태 , xi = (1, x1, x2, ...xd) 형태로 존재
+
+  # 초기화
+  r_vec = rep(0, n) # ri 값은 0으로 초기화
+  prev_beta <- NULL
+  iter <- 0
+
+  # r_vec, beta 교차 최소화
+  while (iter < max_iter){
+    # ri(m-1)을 오프셋으로 설정한 포아송 회귀를 이용해 beta 업데이트
+    result <- glm(y ~ ., family = poisson(), data = data, offset = r_vec)
+    beta <- result$coefficients                             # ri를 offset으로 설정했을 때의 beta
+
+
+    # compute ui (인스턴스)
+    u_hat <- apply(data_x, MARGIN = 1, FUN = partial(dot, y = beta))
+
+
+    # Theorem 1 을 이용한 r_vec update
+    r_vec <- vectorized_theorm1(y = y, lambda = lambda, u_hat = u_hat, r_vec = r_vec)
+
+
+    # 반복 중지여부 결정
+    if (!is.null(prev_beta)){ # prev_beta가 null이라는 것은 현재 beta는 r_vec = 0 일때의 beta. 즉 제일 처음 베타.
+      if (max(abs(beta - prev_beta)) < tol) break   # 모든 beta 값이 이전 beta와 tolerance 보다 작다면 반복중지
+    }
+    # 현재 beta는 prev_beta가 됨
+    prev_beta <- beta
+    iter <- iter + 1
+  }
+
+  
+  return(list(iter = iter, beta = beta, r_vec = r_vec))
+}
+```
+
+# 3. 최종 function 정의 : robust_poisson()
+
+**[변수 설명]**
+
+-   target_type : mean (평균추정) or reg (회귀 계수 추정)
+
+-   simul_type : simulation type (1, 2, 3)
+
+-   n : 자료수
+
+-   p : (회귀 계수 추정의 경우) 독립변수의 수 (default = 0)
+
+-   pi : 이상치 발생확률
+
+-   true_theta : 참 모수값 (평균추정의 경우 true mu, 회귀계수 추정의
+    경우 true beta)
+
+-   alpha : 이상치
+
+-   max_iter : 최대 반복횟수
+
+-   lambda : 조절모수
+
+-   tol : tolarence
+
+-   simul_seed : 자료(y) 생성시 동일한 자료 를 생성해야하는경우 지정,
+    default값 사용시 호출할 때마다 다른 자료 생성 (default = NULL)
+
+**[output]**
+
+-   X : (회귀추정의 경우) 모의실험으로 생성된 x값들 - 평균추정에서는
+    NULL값 반환
+
+-   mu : (회귀추정의 경우) 모의실험으로 계산된 mu - 평균추정에서는
+    NULL값 반환
+
+-   y : 모의 실험으로 생성된 자료
+
+<!-- -->
+
+-   iter : 반복수
+
+-   theta : 추정된 모수
+
+-   r_vec : 이동모수
+
+-   mse : MSE
+
+```{r}
+robust_poisson <- function(target_type,simul_type, n,p=0, pi, true_theta, alpha, max_iter, lambda, tol, simul_seed = NULL){
+  # [변수 설명]
+  # target_type : mean (평균추정) or reg (회귀 계수 추정)
+  # simul_type : simulation type (1, 2, 3)
+  # n : 자료수
+  # p : (회귀 계수 추정의 경우) 독립변수의 수 (default = 0)
+  # pi : 이상치 발생확률
+  # true_theta : 참 모수값 (평균추정의 경우 true mu, 회귀계수 추정의 경우 true beta)
+  # alpha : 이상치
+  # max_iter : 최대 반복횟수
+  # lambda : 조절모수
+  # tol : tolarence
+  # simul_seed : simulation seed
+
+  
+  # [output]
+  # X : (회귀추정의 경우) 모의실험으로 생성된 x값들 - 평균추정에서는 NULL값 반환
+  # mu  : (회귀추정의 경우) 모의실험으로 계산된 mu - 평균추정에서는 NULL값 반환
+  # y : 모의 실험으로 생성된 자료
+  # iter : 반복수
+  # theta : 추정된 모수
+  # r_vec : 이동모수
+  # mse : MSE
+  
+  if(!is.null(simul_seed)) {set.seed(simul_seed)}
+  # 평균추정의 경우
+  if (target_type == "mean"){
+    if(simul_type == 1){
+      # S1
+      simul_data <- algo1_simul_S1(n = n, pi = pi, mu = true_theta, alpha = alpha)
+      
+    } else if (simul_type == 2) {
+      # S2
+      simul_data <- algo1_simul_S2(n = n, pi = pi, mu = true_theta, alpha = alpha)
+      
+    } else if (simul_type == 3){
+      # S3
+      simul_data <- algo1_simul_S3(n = n, pi = pi, mu = true_theta, alpha = alpha)
+    } else {print("simulation type이 정의되지 않았습니다.")}
+    
+    
+    result <- algo1(y = simul_data$y, n = n, max_iter = max_iter, tol = tol, lambda = lambda)
+    
+    
+    
+    
+  } else if(target_type == "reg"){
+    if(length(true_theta) != p+1) {
+      stop("입력된 참 beta값의 길이가 올바르지 않습니다. \n 요구되는 beta의 길이 :", p+1, "\n 입력된 참 beta 값의 길이 : ", length(true_theta) )
+    }
+    
+    if(simul_type == 1){
+      # S1
+      simul_data <- algo2_simul_S1(n = n,p = p, pi, beta = true_theta, alpha = alpha)
+      
+    } else if (simul_type == 2) {
+      # S2
+      simul_data <- algo2_simul_S2(n = n,p = p, pi, beta = true_theta, alpha = alpha)
+      
+    } else if (simul_type == 3){
+      # S3
+      simul_data <- algo2_simul_S3(n = n,p = p, pi, beta = true_theta, alpha = alpha)
+    } else {print("simulation type이 정의되지 않았습니다.")}
+    
+    
+    result <- algo2(X = simul_data$X, y = simul_data$y,n = n, max_iter = max_iter, lambda = lambda, tol = tol)
+    
+    
+    
+    
+  } else {print("target type이 정의되지 않았습니다.")}
+  
+  # mse 계산하기
+  est_theta = as.vector(result[[2]])
+  mse <- mean((est_theta - true_theta)**2)
+  
+  return (list(X = simul_data$X, mu = simul_data$mu, y = simul_data$y, iter = result[[1]], theta = result[[2]], r_vec = result[[3]], mse = mse))
+}
+```
+
+```{r}
+# # reg test
+# robust_poisson(target_type = "reg", simul_type = 3, n = 1000, p = 5,pi = 0.3, true_theta = c(1,1,1,1,1,1), alpha = 10,max_iter = 10000, lambda = 1,tol = 0.01)
+```
+
+```{r}
+# # mean test
+# robust_poisson(target_type = "mean", simul_type = 3, n = 1000,pi = 0.3, true_theta = 1, alpha = 10,max_iter = 10000, lambda = 1,tol = 0.0000001, simul_seed = 1)
+```
+
+# 4. 제시된 셋업 수행
+
+## 4-1. 평균 추정
+
+**[제시된 셋업]**
+$$n = \{100,200,300\}, \pi \in \{0.1, 0.2, 0.3\},\mu = \{1, 5, 10\}, y0 \in \{\alpha \in \{2,3,5\}\}$$
+
+$$\lambda = 2^{\{-5,-4, \cdots ,3\}}$$
+
+```{r}
+n_set = c(100, 200, 300)
+pi_set = c(0.1, 0.2, 0.3)
+mu_set = c(1, 5, 10)
+alpha_set = c(2, 3, 5)
+lambda_set = c(2^(-5),2^(-4),2^(-3),2^(-2),2^(-1),2^(0),2^(1),2^(2),2^(3))
+seed_set = seq(10)
+mean_df = data.frame()
+
+for (n in n_set){
+  for (pi in pi_set){
+    for(mu in mu_set){
+      for(alpha in alpha_set){
+        for(simul_type in c(1,2,3)){
+          for(seed in seed_set){
+            for(lambda in lambda_set){
+              start_time <- Sys.time()
+              result <- robust_poisson(target_type = "mean",simul_type, n,p=0, pi, true_theta = mu, alpha, max_iter = 10000, lambda, tol = 0.01, simul_seed = seed)
+              end_time <- Sys.time()
+              execution_time <- end_time - start_time
+              row <- data.frame(pi, mu, alpha, lambda, simul_type , 
+                              y = paste(result$y, collapse = ","),
+                              iter = result$iter,
+                              estimated_theta = result$theta,
+                              r_vec = paste(result$r_vec, collapse = ","),
+                              MSE = result$mse,
+                              simul_seed = seed,
+                              execution_time = execution_time)
+              mean_df <- bind_rows(mean_df, row)
+            }
+          }
+        }
+      }
+    }
+  }
+  write.csv(mean_df, file = paste("../data/mean_df-set_simul_seed10_n",n,".csv", sep = ""))
+}
+
+
+
+```
+
+## 4-2 회귀계수 추정
+
+**[주어진
+셋업]**$$n = \{ 100,200,300\} , \ p \in \{ 1,5,10\},\ \beta_0 = 1,\ \beta = rep(1,p), \ \pi = \{0.1, 0.2, 0.3\},\ \alpha = \{2,3,5\}$$
+
+$$\lambda = 2^{\{-5,-4, \cdots ,3\}}$$
+
+```{r}
+set.seed(1)
+n_set = c(100,200,300)
+pi_set = c(0.1, 0.2, 0.3)
+p_set = c(1,5,10)
+beta = rep(1, p+1)
+alpha_set = c(2, 3, 5)
+lambda_set = c(2^(-5),2^(-4),2^(-3),2^(-2),2^(-1),2^(0),2^(1),2^(2),2^(3))
+seed_set = seq(10)
+
+reg_df = data.frame()
+
+for (n in n_set){
+  for (p in p_set){
+    for (pi in pi_set){
+        for(alpha in alpha_set){
+          for(lambda in lambda_set){
+            for(simul_type in c(1,2,3)){
+              for(seed in seed_set){
+                start_time <- Sys.time()
+                result <- robust_poisson(target_type = "reg",simul_type, n,p , pi, true_theta = beta, alpha, max_iter = 10000, lambda, tol = 0.01, simul_seed = seed)
+                end_time <- Sys.time()
+                execution_time <- end_time - start_time
+                print(execution_time)
+                row <- data.frame(pi, beta = paste(beta, collapse = ","), alpha, lambda, simul_type , 
+                                X = paste(result$X,collapse = ","),
+                                mu = paste(result$mu,collapse = ","),
+                                y = paste(result$y,collapse = ","),
+                                iter = result$iter,
+                                estimated_theta = paste(result$theta,collapse = ","),
+                                r_vec = paste(result$r_vec, collapse = ","),
+                                MSE = result$mse,
+                                simul_seed = seed,
+                                execution_time = execution_time)
+              reg_df <- bind_rows(reg_df, row)
+              }
+            }
+    
+          }
+        }
+    }
+    write.csv(reg_df, file=paste("../data/reg_df-set_simul_seed10_n",n,"_p",p,".csv", sep =""))
+  }
+}
+
+```
