@@ -1,5 +1,5 @@
 ---
-title: "Simulation&Algorithm_v3"
+title: "Simulation&Algorithm"
 author: "Doeun"
 date: "2023-05-22"
 output:
@@ -634,6 +634,7 @@ reg_df = data.frame()
 
 for (n in n_set){
   for (p in p_set){
+    beta = rep(1, p+1)
     for (pi in pi_set){
         for(alpha in alpha_set){
           for(lambda in lambda_set){
