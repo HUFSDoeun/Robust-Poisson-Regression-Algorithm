@@ -56,19 +56,21 @@
 
 <br> 
 
-### 3. data
+### 2. data
 * 평균 추정과 회귀 추정에 대한 모의 실험 결과 데이터이다. 파일명에 시드 값(simul_seed), 자료 수(n), 독립변수(p)의 수가 기재되어있다.
   
      * **ex.** reg_df-set_simul_seed10_n200_p5.csv
         * 시드값 (simul_seed): 10, 자료수 (n) : 200, 독립변수 수 (p) : 5 를 셋업으로한 회귀추정 모의실험 데이터
 
+* 100MB를 초과하는 데이터의 경우 github에서 push를 지원하지 않기 때문에 아래 dropbox에 저장하여 별도로 관리하였다.
+  * https://www.dropbox.com/scl/fo/xzpmduq6x4747yjwmqia4/h?rlkey=s4gmrp1u2m3116ceip83m7uew&dl=0
 <br> 
 
-### 2. Visualization
+### 3. Visualization
 
 <br> 
 
-### 3. Confusion Matrix
+### 4. Confusion Matrix
 
 
 
