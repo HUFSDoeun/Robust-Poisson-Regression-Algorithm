@@ -39,6 +39,15 @@ library(dplyr)
 
 -   y : 주어진 조건에서 발생한 자료
 
+### 0. algo1_simul_S0(): S0 정상모형, 이상점이 없는 모형으로 비교 기준 모형
+```{r}
+algo1_simul_S0 <- function(n, pi, mu, alpha){
+  y <- rpois(n, mu)
+  return(list(y=y))
+}
+```
+
+
 ### 1. algo1_simul_S1() : S1 이상점 개입 모형
 
 ```{r}
@@ -230,6 +239,28 @@ algo1 <- function(y,max_iter, n, mu, tol, lambda){
 
 -   y : 주어진 조건에서, 각 $\mu$를 평균으로 하는 포아송분포에서 발생한
     자료 $\vec{y}$. vector형태
+
+### 0. algo2_simul_S0() : 정상모형
+```{r}
+algo2_simul_S0 <- function(n, p, pi, beta, alpha){
+  x <- matrix(rep(0, n*p), ncol=p)
+  mu <- c()
+  y <- c()
+  b0 <- beta[1]
+  b <- beta[2:length(beta)]
+  
+  for (i in 1:n){
+    xi <- runif(p,-1,1)
+    mu_i <- exp(b0 + sum(xi*b))
+    y_i <- rpois(1,mu_i)
+    x[i,] <- xi 
+    mu <- append(mu, mu_i)
+    y <- append(y, y_i)
+  }
+  return(list(X = x, mu = mu, y = y))
+}
+```
+
 
 ### 1. algo2_simul_S1() : S1 이상점 개입 모형
 
@@ -429,7 +460,7 @@ algo2 <- function(X,y,n, max_iter, lambda, tol){
 
 -   target_type : mean (평균추정) or reg (회귀 계수 추정)
 
--   simul_type : simulation type (1, 2, 3)
+-   simul_type : simulation type (0, 1, 2, 3)
 
 -   n : 자료수
 
@@ -499,7 +530,11 @@ robust_poisson <- function(target_type,simul_type, n,p=0, pi, true_theta, alpha,
   if(!is.null(simul_seed)) {set.seed(simul_seed)}
   # 평균추정의 경우
   if (target_type == "mean"){
-    if(simul_type == 1){
+    if(simul_type == 0){
+      # S0
+      simul_data <- algo1_simul_S0(n = n, pi = pi, mu = true_theta, alpha = alpha)
+      
+    } else if(simul_type == 1){
       # S1
       simul_data <- algo1_simul_S1(n = n, pi = pi, mu = true_theta, alpha = alpha)
       
@@ -520,10 +555,14 @@ robust_poisson <- function(target_type,simul_type, n,p=0, pi, true_theta, alpha,
     
   } else if(target_type == "reg"){
     if(length(true_theta) != p+1) {
-      stop("입력된 참 beta값의 길이가 올바르지 않습니다. \n 요구되는 beta의 길이 :", p+1, "\n 입력된 참 beta 값의 길이 : ", length(true_theta) )
+      stop("입력된 참 beta값의 길이가 올바르지 않습니다. \n 요구되는 참 beta의 길이 :", p+1, "\n 입력된 참 beta 값의 길이 : ", length(true_theta) )
     }
     
-    if(simul_type == 1){
+    if(simul_type == 0){
+      # S0
+      simul_data <- algo2_simul_S0(n = n,p = p, pi, beta = true_theta, alpha = alpha)
+    
+    } else if(simul_type == 1){
       # S1
       simul_data <- algo2_simul_S1(n = n,p = p, pi, beta = true_theta, alpha = alpha)
       
@@ -578,9 +617,10 @@ mu_set = c(1, 5, 10)
 alpha_set = c(2, 3, 5)
 lambda_set = c(2^(-5),2^(-4),2^(-3),2^(-2),2^(-1),2^(0),2^(1),2^(2),2^(3))
 seed_set = seq(10)
-mean_df = data.frame()
+
 
 for (n in n_set){
+  mean_df = data.frame()
   for (pi in pi_set){
     for(mu in mu_set){
       for(alpha in alpha_set){
@@ -606,7 +646,7 @@ for (n in n_set){
       }
     }
   }
-  write.csv(mean_df, file = paste("../data/mean_df-set_simul_seed10_n",n,".csv", sep = ""))
+  write.csv(mean_df, file = paste("../data/reg_df-set_simul_seed10_n",n,"_p",p,".csv", sep =""))
 }
 
 
@@ -626,13 +666,13 @@ n_set = c(100,200,300)
 pi_set = c(0.1, 0.2, 0.3)
 p_set = c(1,5,10)
 alpha_set = c(2, 3, 5)
-lambda_set = c(2^(-5),2^(-4),2^(-3),2^(-2),2^(-1),2^(0),2^(1),2^(2),2^(3))
+lambda_set = c(2^(4),2^(5),2^(6),2^(7),2^(8),2^(9))
 seed_set = seq(10)
 
-reg_df = data.frame()
 
 for (n in n_set){
   for (p in p_set){
+    reg_df = data.frame()
     beta = rep(1, p+1)
     for (pi in pi_set){
         for(alpha in alpha_set){
@@ -643,7 +683,7 @@ for (n in n_set){
                 result <- robust_poisson(target_type = "reg",simul_type, n,p , pi, true_theta = beta, alpha, max_iter = 10000, lambda, tol = 0.01, simul_seed = seed)
                 end_time <- Sys.time()
                 execution_time <- end_time - start_time
-                print(execution_time)
+                # print(execution_time)
                 row <- data.frame(pi, beta = paste(beta, collapse = ","), alpha, lambda, simul_type , 
                                 X = paste(result$X,collapse = ","),
                                 mu = paste(result$mu,collapse = ","),
@@ -661,8 +701,10 @@ for (n in n_set){
           }
         }
     }
-    write.csv(reg_df, file=paste("../data/reg_df-set_simul_seed10_n",n,"_p",p,".csv", sep =""))
+    print(paste("beta : ", reg_df$beta[1]))
+    print(paste("n : ",length(strsplit(reg_df$mu[1],",")[[1]])))
+    print(paste("now end of n = ",n, "p=",p))
+    write.csv(reg_df, file=paste("../data/reg_df-set_simul_seed10_n",n,"_p",p,"_extension.csv", sep =""))
   }
 }
-
 ```
