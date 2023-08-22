@@ -1,0 +1,209 @@
+---
+title: "Algo1 Visualize"
+author: "김협"
+date: "5/23/2023"
+output: html_document
+---
+
+# 0. library
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+# 1. function 정의
+
+## 1-1. function log lambda
+
+-   fun_log: lambda 값을 밑이 2인 log로 표현하여, 시각화 시에 x축 간격을 동일하게 표현
+
+```{r}
+fun_log <- function(data){
+  data$lambda <- log(data$lambda, base = 2)
+  colnames(data)[5] <- "log_lambda"
+  
+  return(data)
+}
+```
+
+## 1-2. function_handling
+
+```{r}
+fun_handling <- function(data, pi_num, simul_type_num, alpha_num, mu_num){
+  data %>% 
+    filter(simul_type == simul_type_num &
+             pi == pi_num &
+             alpha == alpha_num &
+             mu == mu_num) %>% 
+    select(-X) %>% 
+    arrange(log_lambda) -> data_handling # end data_hadling
+  
+  # log_lambda 별 평균값 data 생성
+  data_handling %>% 
+    group_by(log_lambda) %>% 
+    summarise(avg_MSE = mean(MSE)) -> avg_data_handling
+  
+  # 최소 MSE search
+  condition <- avg_data_handling$avg_MSE == min(avg_data_handling[,2])
+  
+  
+  print(cat("최적의 람다는",2^avg_data_handling$log_lambda[condition], '\n',
+              "즉, 최적의 log_2 람다는",avg_data_handling$log_lambda[condition],'\n',
+              "이고, 그때의 MSE는", min(avg_data_handling[,2])
+            ))
+
+  
+  return(list(handling = data_handling, avg_handling = avg_data_handling))
+}
+```
+
+## 1-3. function_Visualize
+
+-   function_Visualize: 시각화 function 정의
+
+```{r}
+fun_visualize <- function(data_handling, avg_data_handling){
+  # vanila MSE
+  data_handling %>% 
+    select(-c(r_vec, simul_type, pi, alpha, MSE, estimated_theta, iter)) -> base_data_handling
+  
+  my_list <- strsplit(base_data_handling$y, ",")
+  my_list <- lapply(my_list, function(x) as.integer(x))
+  
+  
+  base_data_handling$y <- unlist(lapply(my_list, mean))
+  colnames(base_data_handling)[3] <-  'vanila_MLE'
+  
+  base_data_handling # 여기까지 하면, 각 log_lambda에 대해 seed 개수 만큼의 vanila_MLE 계산 완료
+  
+  # vanila_MSE 구하자
+  base_data_handling %>% 
+    mutate(vanila_MSE = (mu - vanila_MLE)^2 ) %>% 
+    group_by(log_lambda) %>% 
+    summarise(avg_vanila_MSE = mean(vanila_MSE)) -> avg_vanila_MSE
+  
+  
+  avg_vanila_MSE[[1,2]] # vanila MSE
+  
+  x_lab = expression(log[2](lambda))
+  
+  output <- ggplot(data = data_handling) +
+            # geom_point(mapping = aes(x = log_lambda, y = MSE)) +
+            geom_boxplot(aes(x = log_lambda,
+                             y = MSE,
+                             group = log_lambda),
+                         
+                         # boxplot outlier 
+                         outlier.color = 'red',
+                         outlier.shape = 1,
+                         outlier.alpha = 0.7) +
+            
+            # log_lambda 별 평균값 추가 (color = steelblue4)
+            geom_point(data = avg_data_handling,
+                       color = 'steelblue4',
+                       size = 1.5,
+                       aes(x = log_lambda,
+                           y = avg_MSE)) +
+            geom_line(data = avg_data_handling,
+                      color = 'steelblue4', 
+                      size = 1.3,
+                      aes(x = log_lambda,
+                           y = avg_MSE)) +
+            
+            # MSE_baseline  
+            geom_hline(yintercept = avg_vanila_MSE[[1, 2]], # avg_vanila_MSE 뒤의 인덱스는 중요하지 않음
+                       col = 'gray', linetype = 'dashed', size = 1) +
+            
+            # x축 간격 설정
+            scale_x_continuous(breaks = -5:3) +
+            
+            # title, xlab, ylab
+            
+            xlab(x_lab) +
+            
+            # theme
+            theme_bw() +
+          	theme(plot.title = element_text(size = 20),
+          	      plot.subtitle = element_text(size = 15))
+  return(output)
+}
+```
+
+# 2. 시각화
+**[제시된 셋업]**
+$$n = \{100,200,300\}, \pi \in \{0.1, 0.2, 0.3\},\mu = \{1, 5, 10\}, y0 \in \{\alpha \in \{2,3,5\}\}$$
+
+$$\lambda = 2^{\{-5,-4, \cdots ,3\}}$$
+
+## 2-1. n = 100
+
+
+```{r}
+data_n100 <- read.csv('../data/mean_df-set_simul_seed10_n100.csv')
+data <- fun_log(data_n100)
+mu_set = c(1,5,10)
+pi_set = c(0.1,0.2,0.3)
+simul_type_set = c(0,1,2,3)
+alpha_set = c(2,3,5)
+
+for(mu_num in mu_set){
+  for(pi_num in pi_set){
+    for(simul_type_num in simul_type_set){
+      for(alpha_num in alpha_set){
+        print(paste("n = 100, mu = ", mu_num,", pi = ",pi_num, ", simul_type = ", simul_type_num,", alpha = ", alpha_num))
+        data_handling <- fun_handling(data=data, pi_num=pi_num, simul_type_num=simul_type_num, alpha_num=alpha_num,mu_num = mu_num)
+        print(fun_visualize(data_handling$handling,data_handling$avg_handling))
+      }
+    }
+  }
+}
+
+```
+## 2-2. n = 200
+
+```{r}
+data_n200 <- read.csv('../data/mean_df-set_simul_seed10_n200.csv')
+data <- fun_log(data_n200)
+mu_set = c(1,5,10)
+pi_set = c(0.1,0.2,0.3)
+simul_type_set = c(0,1,2,3)
+alpha_set = c(2,3,5)
+
+for(mu_num in mu_set){
+  for(pi_num in pi_set){
+    for(simul_type_num in simul_type_set){
+      for(alpha_num in alpha_set){
+        print(paste("n = 200, mu = ", mu_num,", pi = ",pi_num, ", simul_type = ", simul_type_num,", alpha = ", alpha_num))
+        data_handling <- fun_handling(data=data, pi_num=pi_num, simul_type_num=simul_type_num, alpha_num=alpha_num,mu_num = mu_num)
+        print(fun_visualize(data_handling$handling,data_handling$avg_handling))
+      }
+    }
+  }
+}
+
+```
+
+## 2-2. n = 300
+
+```{r}
+data_n300 <- read.csv('../data/mean_df-set_simul_seed10_n300.csv')
+data <- fun_log(data_n300)
+mu_set = c(1,5,10)
+pi_set = c(0.1,0.2,0.3)
+simul_type_set = c(0,1,2,3)
+alpha_set = c(2,3,5)
+
+for(mu_num in mu_set){
+  for(pi_num in pi_set){
+    for(simul_type_num in simul_type_set){
+      for(alpha_num in alpha_set){
+        print(paste("n = 300, mu = ", mu_num,", pi = ",pi_num, ", simul_type = ", simul_type_num,", alpha = ", alpha_num))
+        data_handling <- fun_handling(data=data, pi_num=pi_num, simul_type_num=simul_type_num, alpha_num=alpha_num,mu_num = mu_num)
+        print(fun_visualize(data_handling$handling,data_handling$avg_handling))
+      }
+    }
+  }
+}
+
+```
